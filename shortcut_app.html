@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shortscut Pro - Multi-Format</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/coi-serviceworker/0.1.7/coi-serviceworker.min.js"></script>
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
+    <style>
+        :root { --primary: #3b82f6; --bg: #0f172a; --card: #1e293b; --text: #f8fafc; --accent: #10b981; }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; align-items: center; padding: 2rem; }
+        .container { background: var(--card); padding: 2rem; border-radius: 12px; width: 95%; max-width: 650px; text-align: center; margin-bottom: 1.5rem; }
+        .upload-area { border: 2px dashed #475569; padding: 2rem; border-radius: 8px; cursor: pointer; margin-bottom: 1rem; }
+        select, input[type="text"] { width: 100%; padding: 12px; margin: 10px 0; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: white; font-size: 1rem; }
+        button { background: var(--primary); color: white; border: none; padding: 15px; border-radius: 8px; cursor: pointer; width: 100%; font-weight: bold; font-size: 1rem; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        #status { margin: 15px 0; font-size: 0.9rem; color: #94a3b8; font-weight: bold; }
+        .results-box { background: #0f172a; padding: 15px; border-radius: 8px; margin-top: 15px; text-align: left; border-left: 4px solid var(--accent); }
+        .tag { display: inline-block; background: #334155; padding: 4px 8px; border-radius: 4px; font-size: 12px; margin: 2px; border: 1px solid var(--primary); }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Shortscut Pro</h1>
+        <div class="upload-area" onclick="document.getElementById('videoInput').click()">
+            <span id="fileLabel">📁 Selecionar Vídeo</span>
+            <input type="file" id="videoInput" accept="video/*" hidden>
+        </div>
+
+        <div style="text-align: left; margin-bottom: 15px;">
+            <label>Formato de Saída:</label>
+            <select id="formatSelect">
+                <option value="horizontal">Horizontal (Original 16:9) - Super Rápido</option>
+                <option value="vertical">Vertical (Shorts/TikTok 9:16) - Com Recorte</option>
+            </select>
+            
+            <label>Marca d'água (Opcional):</label>
+            <input type="text" id="watermarkText" placeholder="Ex: @meu_canal">
+        </div>
+
+        <button id="processBtn" disabled>🚀 Iniciar Processamento</button>
+        <div id="status">Aguardando vídeo...</div>
+        <div id="results"></div>
+    </div>
+
+    <div class="container">
+        <h2>🔥 SEO Viral</h2>
+        <input type="text" id="seoTopic" placeholder="Tema para Títulos e Tags...">
+        <button onclick="generateSEO()" style="background: #6366f1;">Gerar Estratégia SEO</button>
+        <div id="seoResults"></div>
+    </div>
+
+    <script>
+        const { createFFmpeg, fetchFile } = FFmpeg;
+        const ffmpeg = createFFmpeg({ 
+            log: true, 
+            corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js' 
+        });
+
+        const videoInput = document.getElementById('videoInput');
+        const processBtn = document.getElementById('processBtn');
+
+        videoInput.onchange = (e) => {
+            if (e.target.files.length > 0) {
+                document.getElementById('fileLabel').innerText = "✅ " + e.target.files[0].name;
+                processBtn.disabled = false;
+            }
+        };
+
+        processBtn.onclick = async () => {
+            const file = videoInput.files[0];
+            const format = document.getElementById('formatSelect').value;
+            const wmText = document.getElementById('watermarkText').value;
+            
+            processBtn.disabled = true;
+            if (!ffmpeg.isLoaded()) {
+                document.getElementById('status').innerText = "Carregando motor...";
+                await ffmpeg.load();
+            }
+
+            ffmpeg.FS('writeFile', 'input.mp4', await fetchFile(file));
+            document.getElementById('status').innerText = "Processando... Isso pode levar um tempo dependendo do formato.";
+
+            let args = ['-i', 'input.mp4'];
+
+            if (format === 'vertical') {
+                // FILTRO VERTICAL + MARCA D'ÁGUA (SE HOUVER)
+                let filter = 'crop=ih*(9/16):ih';
+                if (wmText) {
+                    filter += `,drawtext=text='${wmText}':x=(w-text_w)/2:y=h-100:fontsize=40:fontcolor=white:shadowcolor=black:shadowx=2:shadowy=2`;
+                }
+                args.push('-vf', filter);
+            } else if (wmText) {
+                // APENAS MARCA D'ÁGUA NO HORIZONTAL
+                args.push('-vf', `drawtext=text='${wmText}':x=w-text_w-20:y=h-40:fontsize=30:fontcolor=white`);
+            } else {
+                // HORIZONTAL PURO (RÁPIDO)
+                args.push('-c', 'copy');
+            }
+
+            // Configurações de Segmentação (Corte de 2 min)
+            args.push('-segment_time', '120', '-f', 'segment', '-reset_timestamps', '1', 'output_%03d.mp4');
+
+            await ffmpeg.run(...args);
+
+            document.getElementById('status').innerText = "Finalizado!";
+            const files = ffmpeg.FS('readdir', '/');
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '';
+
+            files.filter(f => f.startsWith('output_')).forEach(filename => {
+                const data = ffmpeg.FS('readFile', filename);
+                const url = URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' }));
+                resultsDiv.innerHTML += `<div class="results-box">${filename} <a href="${url}" download="${filename}" style="float:right; color:var(--accent);">Download</a></div>`;
+                ffmpeg.FS('unlink', filename);
+            });
+            processBtn.disabled = false;
+        };
+
+        function generateSEO() {
+            const topic = document.getElementById('seoTopic').value;
+            if(!topic) return alert("Digite um tema!");
+            const titles = [`O guia de ${topic} que ninguém te mostra`, `PARE TUDO e veja isso sobre ${topic}`];
+            document.getElementById('seoResults').innerHTML = `<div class="results-box"><strong>Títulos Sugeridos:</strong><br>${titles.join('<br>')}</div>`;
+        }
+    </script>
+</body>
+</html>
